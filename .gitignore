@@ -17,3 +17,6 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Application Data
+data/

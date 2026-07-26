@@ -11,7 +11,10 @@ router
     .route("/login")
     .get(authController.getLogin)
     .post(
-        [check("email").isEmail().withMessage("Please enter a valid email.").normalizeEmail()],
+        [
+            check("email").isEmail().withMessage("Please enter a valid email.").normalizeEmail(),
+            body("password").trim(),
+        ],
         authController.postLogin,
     );
 router

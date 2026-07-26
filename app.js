@@ -8,6 +8,7 @@ import session from "express-session";
 import connectMongoDBSession from "connect-mongodb-session";
 import csrf from "csurf";
 import flash from "connect-flash";
+import multer from "multer";
 
 import adminRoutes from "./routes/adminRoutes.js";
 import shopRoutes from "./routes/shopRoutes.js";
@@ -17,6 +18,7 @@ import rootDir from "./utils/path.js";
 import * as errorController from "./controllers/errorController.js";
 
 import User from "./models/userModel.js";
+import { randomBytes } from "crypto";
 
 const app = express();
 
@@ -28,20 +30,43 @@ const store = new MongoDBStore({
 
 const csrfProtection = csrf();
 
+const fileStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, "images");
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + "-" + file.originalname);
+    },
+});
+
+const fileFilter = (req, file, cb) => {
+    if (
+        file.mimetype === "image/png" ||
+        file.mimetype === "image/jpg" ||
+        file.mimetype === "image/jpeg"
+    ) {
+        cb(null, true);
+    } else {
+        cb(new Error("Invalid image file"), false);
+    }
+};
+
 app.set("view engine", "ejs");
 app.set("views", path.join(rootDir, "views"));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(multer({ storage: fileStorage, fileFilter: fileFilter }).single("image"));
 
 app.use(express.static(path.join(rootDir, "/public")));
+app.use("/images", express.static(path.join(rootDir, "images")));
 app.use(
     session({
         secret: "my secret",
         resave: false,
         saveUninitialized: false,
         store: store,
-    })
+    }),
 );
 
 app.use(csrfProtection);
@@ -77,6 +102,8 @@ app.use((req, res, next) => {
 app.use("/admin", adminRoutes);
 app.use(shopRoutes);
 app.use(authRoutes);
+
+app.get("/500", errorController.get500);
 
 app.use(errorController.get404);
 
