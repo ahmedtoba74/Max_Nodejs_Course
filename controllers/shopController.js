@@ -7,6 +7,8 @@ import Product from "../models/productModel.js";
 import Order from "../models/orderModel.js";
 import catchAsync from "../utils/catchAsync.js";
 
+const ITEM_PER_PAGE = 2;
+
 const generateEnterpriseInvoice = (doc, order) => {
     const primaryColor = "#1E293B"; // Slate navy
     const secondaryColor = "#2563EB"; // Indigo blue accent
@@ -249,20 +251,46 @@ const generateEnterpriseInvoice = (doc, order) => {
 };
 
 export const getIndex = catchAsync(async (req, res, next) => {
-    const products = await Product.find();
+    const page = Math.max(1, +req.query.page || 1);
+    const totalProducts = await Product.countDocuments();
+    const products = await Product.find()
+        .skip((page - 1) * ITEM_PER_PAGE)
+        .limit(ITEM_PER_PAGE);
     res.status(200).render("shop/index", {
         prods: products,
+        totalProducts,
+        ITEM_PER_PAGE,
         pageTitle: "Shop",
         path: "/",
+        currentPage: page,
+        hasNextPage: ITEM_PER_PAGE * page < totalProducts,
+        hasPrevPage: page > 1,
+        nextPage: page + 1,
+        previousPage: page - 1,
+        lastPage: Math.ceil(totalProducts / ITEM_PER_PAGE) || 1,
+        totalPages: Math.ceil(totalProducts / ITEM_PER_PAGE) || 1,
     });
 });
 
 export const getProducts = catchAsync(async (req, res, next) => {
-    const products = await Product.find();
+    const page = Math.max(1, +req.query.page || 1);
+    const totalProducts = await Product.countDocuments();
+    const products = await Product.find()
+        .skip((page - 1) * ITEM_PER_PAGE)
+        .limit(ITEM_PER_PAGE);
     res.status(200).render("shop/product-list", {
         prods: products,
+        totalProducts,
+        ITEM_PER_PAGE,
         pageTitle: "Products",
         path: "/products",
+        currentPage: page,
+        hasNextPage: ITEM_PER_PAGE * page < totalProducts,
+        hasPrevPage: page > 1,
+        nextPage: page + 1,
+        previousPage: page - 1,
+        lastPage: Math.ceil(totalProducts / ITEM_PER_PAGE) || 1,
+        totalPages: Math.ceil(totalProducts / ITEM_PER_PAGE) || 1,
     });
 });
 
