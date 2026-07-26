@@ -1,7 +1,252 @@
+import path from "path";
+import fs from "fs";
+
+import PDFDocument from "pdfkit";
+
 import Product from "../models/productModel.js";
 import Order from "../models/orderModel.js";
 import catchAsync from "../utils/catchAsync.js";
-import User from "../models/userModel.js";
+
+const generateEnterpriseInvoice = (doc, order) => {
+    const primaryColor = "#1E293B"; // Slate navy
+    const secondaryColor = "#2563EB"; // Indigo blue accent
+    const textDark = "#0F172A"; // Body text
+    const textMuted = "#64748B"; // Muted text/labels
+    const borderColor = "#E2E8F0"; // Table/divider lines
+    const bgLight = "#F8FAFC"; // Row background highlight
+
+    const leftMargin = 50;
+    const rightMargin = 545; // 595 - 50 (A4 width = 595.28)
+    const contentWidth = 495;
+
+    // --- 1. HEADER BRANDING ---
+    // Top accent bar
+    doc.rect(leftMargin, 40, contentWidth, 4).fill(secondaryColor);
+
+    // Company / Store Branding
+    doc.fillColor(primaryColor)
+        .fontSize(22)
+        .font("Helvetica-Bold")
+        .text("Toba SHOP", leftMargin, 55);
+
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica")
+        .text("Official Purchase Receipt & Tax Invoice", leftMargin, 82)
+        .text("support@Tobashop.com | www.Tobashop.com", leftMargin, 95);
+
+    // Header Title (Right aligned)
+    doc.fillColor(secondaryColor)
+        .fontSize(24)
+        .font("Helvetica-Bold")
+        .text("INVOICE", leftMargin, 55, { align: "right", width: contentWidth });
+
+    // Paid Status Badge
+    doc.roundedRect(rightMargin - 65, 87, 65, 18, 9).fillAndStroke("#DCFCE7", "#86EFAC");
+    doc.fillColor("#15803D")
+        .fontSize(9)
+        .font("Helvetica-Bold")
+        .text("PAID", rightMargin - 65, 91, { align: "center", width: 65 });
+
+    // --- 2. DIVIDER LINE ---
+    doc.moveTo(leftMargin, 118)
+        .lineTo(rightMargin, 118)
+        .strokeColor(borderColor)
+        .lineWidth(1)
+        .stroke();
+
+    // --- 3. CUSTOMER & ORDER METADATA ---
+    const infoY = 132;
+
+    // Customer Info Column (Left)
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica-Bold")
+        .text("BILLED TO", leftMargin, infoY);
+
+    doc.fillColor(textDark)
+        .fontSize(11)
+        .font("Helvetica-Bold")
+        .text(order.user.name || "Customer", leftMargin, infoY + 15);
+
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica")
+        .text(order.user.email || "", leftMargin, infoY + 30);
+
+    // Order Meta Info Column (Right)
+    const rightColX = 350;
+    const rightColWidth = rightMargin - rightColX;
+
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica-Bold")
+        .text("INVOICE DETAILS", rightColX, infoY);
+
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica")
+        .text("Order ID:", rightColX, infoY + 15)
+        .text("Date Issued:", rightColX, infoY + 30);
+
+    const formattedDate =
+        order._id && typeof order._id.getTimestamp === "function"
+            ? order._id
+                  .getTimestamp()
+                  .toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+            : new Date().toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+              });
+
+    doc.fillColor(textDark)
+        .fontSize(9)
+        .font("Helvetica-Bold")
+        .text(`#${order._id}`, rightColX, infoY + 15, { align: "right", width: rightColWidth })
+        .text(formattedDate, rightColX, infoY + 30, { align: "right", width: rightColWidth });
+
+    // --- 4. TABLE HEADER ---
+    const tableY = 192;
+    const colItem = leftMargin;
+    const colItemWidth = 240;
+    const colPrice = leftMargin + 245;
+    const colPriceWidth = 80;
+    const colQty = leftMargin + 330;
+    const colQtyWidth = 50;
+    const colTotal = leftMargin + 385;
+    const colTotalWidth = 110;
+
+    // Header Fill Box
+    doc.roundedRect(leftMargin, tableY, contentWidth, 24, 4).fill(primaryColor);
+
+    doc.fillColor("#FFFFFF").fontSize(9).font("Helvetica-Bold");
+
+    doc.text("ITEM DESCRIPTION", colItem + 10, tableY + 7, { width: colItemWidth - 10 });
+    doc.text("UNIT PRICE", colPrice, tableY + 7, { width: colPriceWidth, align: "right" });
+    doc.text("QTY", colQty, tableY + 7, { width: colQtyWidth, align: "center" });
+    doc.text("AMOUNT", colTotal, tableY + 7, { width: colTotalWidth - 10, align: "right" });
+
+    // --- 5. TABLE ROWS ---
+    let currentY = tableY + 28;
+    let totalPrice = 0;
+
+    order.products.forEach((prod, index) => {
+        const prodTitle = prod.product.title || "Product";
+        const unitPrice = Number(prod.product.price) || 0;
+        const quantity = Number(prod.quantity) || 1;
+        const lineTotal = unitPrice * quantity;
+        totalPrice += lineTotal;
+
+        // Auto Page Break if exceeding page limits
+        if (currentY > 700) {
+            doc.addPage();
+            currentY = 50;
+        }
+
+        // Alternating row background
+        if (index % 2 === 0) {
+            doc.roundedRect(leftMargin, currentY - 4, contentWidth, 22, 2).fill(bgLight);
+        }
+
+        doc.fillColor(textDark).fontSize(9).font("Helvetica");
+
+        doc.text(prodTitle, colItem + 10, currentY, { width: colItemWidth - 10, lineBreak: false });
+        doc.text(`$${unitPrice.toFixed(2)}`, colPrice, currentY, {
+            width: colPriceWidth,
+            align: "right",
+        });
+        doc.text(`${quantity}`, colQty, currentY, { width: colQtyWidth, align: "center" });
+        doc.fillColor(primaryColor)
+            .font("Helvetica-Bold")
+            .text(`$${lineTotal.toFixed(2)}`, colTotal, currentY, {
+                width: colTotalWidth - 10,
+                align: "right",
+            });
+
+        currentY += 24;
+
+        // Row Separator Line
+        doc.moveTo(leftMargin, currentY - 6)
+            .lineTo(rightMargin, currentY - 6)
+            .strokeColor(borderColor)
+            .lineWidth(0.5)
+            .stroke();
+    });
+
+    // --- 6. SUMMARY BREAKDOWN CARD ---
+    let summaryY = Math.max(currentY + 15, 320);
+    if (summaryY > 660) {
+        doc.addPage();
+        summaryY = 50;
+    }
+
+    const summaryBoxX = 330;
+    const summaryBoxWidth = rightMargin - summaryBoxX;
+
+    doc.fillColor(textMuted)
+        .fontSize(9)
+        .font("Helvetica")
+        .text("Subtotal:", summaryBoxX, summaryY)
+        .text(`$${totalPrice.toFixed(2)}`, summaryBoxX, summaryY, {
+            align: "right",
+            width: summaryBoxWidth,
+        });
+
+    doc.text("Tax (0%):", summaryBoxX, summaryY + 16).text("$0.00", summaryBoxX, summaryY + 16, {
+        align: "right",
+        width: summaryBoxWidth,
+    });
+
+    doc.text("Shipping:", summaryBoxX, summaryY + 32).text("FREE", summaryBoxX, summaryY + 32, {
+        align: "right",
+        width: summaryBoxWidth,
+    });
+
+    // Grand Total Badge Box
+    doc.roundedRect(summaryBoxX, summaryY + 52, summaryBoxWidth, 34, 6).fill(primaryColor);
+
+    doc.fillColor("#FFFFFF")
+        .fontSize(10)
+        .font("Helvetica-Bold")
+        .text("TOTAL PAID", summaryBoxX + 12, summaryY + 64);
+
+    doc.fillColor("#60A5FA")
+        .fontSize(14)
+        .font("Helvetica-Bold")
+        .text(`$${totalPrice.toFixed(2)}`, summaryBoxX, summaryY + 62, {
+            align: "right",
+            width: summaryBoxWidth - 12,
+        });
+
+    // --- 7. FOOTER & PAGE NUMBERING ---
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(i);
+
+        // Footer Border Line
+        doc.moveTo(leftMargin, 770)
+            .lineTo(rightMargin, 770)
+            .strokeColor(borderColor)
+            .lineWidth(1)
+            .stroke();
+
+        doc.fillColor(textMuted)
+            .fontSize(8)
+            .font("Helvetica")
+            .text(
+                "Thank you for shopping with Toba Shop! For questions, please email support@Tobashop.com",
+                leftMargin,
+                780,
+                { width: 350 },
+            );
+
+        doc.text(`Page ${i + 1} of ${pages.count}`, leftMargin, 780, {
+            align: "right",
+            width: contentWidth,
+        });
+    }
+};
 
 export const getIndex = catchAsync(async (req, res, next) => {
     const products = await Product.find();
@@ -90,4 +335,38 @@ export const getOrders = catchAsync(async (req, res, next) => {
         pageTitle: "Your Orders",
         orders,
     });
+});
+
+export const getInvoice = catchAsync(async (req, res, next) => {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+
+    if (!order || order.user.userId.toString() !== req.user._id.toString()) {
+        return next(new AppError(404, "Order not found"));
+    }
+
+    const invoiceName = `invoice-${orderId}.pdf`;
+    const invoicesDir = path.join("data", "invoices");
+    const invoicePath = path.join(invoicesDir, invoiceName);
+
+    if (!fs.existsSync(invoicesDir)) {
+        fs.mkdirSync(invoicesDir, { recursive: true });
+    }
+
+    const doc = new PDFDocument({
+        size: "A4",
+        margin: 50,
+        bufferPages: true,
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${invoiceName}"`);
+
+    doc.pipe(fs.createWriteStream(invoicePath));
+    doc.pipe(res);
+
+    generateEnterpriseInvoice(doc, order);
+
+    doc.end();
 });

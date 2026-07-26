@@ -17,7 +17,7 @@ export const getLogin = catchAsync(async (req, res, next) => {
     } else {
         message = null;
     }
-    res.status(422).render("auth/login", {
+    res.status(200).render("auth/login", {
         path: "/login",
         pageTitle: "Login",
         errorMessage: message,
@@ -191,7 +191,7 @@ export const getNewPassword = catchAsync(async (req, res, next) => {
         message = null;
     }
 
-    res.status(422).render("auth/new-password", {
+    res.status(200).render("auth/new-password", {
         path: "/new-password",
         pageTitle: "New Password",
         errorMessage: message,
