@@ -2,12 +2,15 @@ import path from "path";
 import fs from "fs";
 
 import PDFDocument from "pdfkit";
+import Stripe from "stripe";
 
 import Product from "../models/productModel.js";
 import Order from "../models/orderModel.js";
 import catchAsync from "../utils/catchAsync.js";
 
 const ITEM_PER_PAGE = 2;
+
+// Initialize Stripe lazily inside functions to ensure process.env.STRIPE_SECRET_KEY is loaded by dotenv
 
 const generateEnterpriseInvoice = (doc, order) => {
     const primaryColor = "#1E293B"; // Slate navy
@@ -327,13 +330,65 @@ export const postCartDeleteProduct = catchAsync(async (req, res, next) => {
     res.redirect("/cart");
 });
 
-export const getCheckout = (req, res, next) => {
+export const getCheckout = catchAsync(async (req, res, next) => {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const user = await req.user.populate("cart.items.productId");
+    const products = user.cart.items;
+    const totalSum = products.reduce((total, item) => {
+        return total + item.quantity * item.productId.price;
+    }, 0);
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: products.map((item) => {
+            return {
+                price_data: {
+                    currency: "usd",
+                    product_data: {
+                        name: item.productId.title,
+                        description: item.productId.description,
+                    },
+                    unit_amount: Math.round(item.productId.price * 100),
+                },
+                quantity: item.quantity,
+            };
+        }),
+        success_url: `${req.protocol}://${req.get("host")}/checkout/success`,
+        cancel_url: `${req.protocol}://${req.get("host")}/checkout/cancel`,
+    });
+
     res.status(200).render("shop/checkout", {
         pageTitle: "Checkout",
         path: "/checkout",
+        products,
+        totalSum,
+        clientSecret: session.client_secret,
+        sessionId: session.id,
     });
-};
+});
 
+export const getCheckoutSuccess = catchAsync(async (req, res, next) => {
+    const user = await req.user.populate("cart.items.productId");
+    const products = user.cart.items.map((i) => {
+        return {
+            quantity: i.quantity,
+            product: { ...i.productId._doc },
+        };
+    });
+    const order = new Order({
+        user: {
+            name: req.user.name,
+            email: req.user.email,
+            userId: req.user,
+        },
+        products: products,
+    });
+
+    await order.save();
+    req.user.clearCart();
+    res.redirect("/orders");
+});
 export const postOrder = catchAsync(async (req, res, next) => {
     const user = await req.user.populate("cart.items.productId");
     const products = user.cart.items.map((i) => {

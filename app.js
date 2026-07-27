@@ -1,5 +1,4 @@
-import dotenv, { config } from "dotenv";
-config();
+import "dotenv/config";
 import path from "path";
 
 import express from "express";
