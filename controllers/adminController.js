@@ -120,12 +120,11 @@ export const getProducts = catchAsync(async (req, res, next) => {
     });
 });
 
-export const postDeleteProduct = catchAsync(async (req, res, next) => {
-    const { productId } = req.body;
+export const deleteProduct = catchAsync(async (req, res, next) => {
+    const { productId } = req.params;
     const product = await Product.findById(productId);
-    if (product) {
-        deleteFile(product.image);
-        await Product.findByIdAndDelete(productId);
-    }
-    res.redirect("/admin/products");
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    deleteFile(product.image);
+    await Product.deleteOne({ _id: productId, userId: req.user._id });
+    res.status(200).json({ message: "Success" });
 });
